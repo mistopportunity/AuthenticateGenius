@@ -33,14 +33,15 @@ namespace AuthenticateGenius {
 			this.expiration=expiration;
 			this.encoding=encoding;
 		}
-		//Returns null if password is invalid or user doesn't exist
+		/*Returns null if password is invalid or user doesn't exist.
+		  Forcibly signs out other tokens on successfull sign in. */
 		public AccessToken SignInUser(string username,string password) {
 			if(VerifyPassword(username,password)) {
-				AccessToken accessToken;
+				AccessToken accessToken = new AccessToken(username);
 				if(tokenPool.ContainsKey(username)) {
-					accessToken=tokenPool[username];
+					DeauthenticateToken(tokenPool[username]);
+					tokenPool[username] = accessToken;
 				} else {
-					accessToken=new AccessToken(username);
 					tokenPool.Add(username,accessToken);
 				}
 				return accessToken;
@@ -48,9 +49,9 @@ namespace AuthenticateGenius {
 				return null;
 			}
 		}
-		//Returns null if user already exists
+		//Can be used to check if a user exists through a null return.
 		public AccessToken CreateUser(string username,string password) {
-			if(!UserExists(username)) {
+			if(storage.Get(username)==null) {
 				string salt = GetSalt();
 				storage.Set(username,salt+GetHash(password,salt));
 				AccessToken accessToken = new AccessToken(username);
@@ -74,7 +75,7 @@ namespace AuthenticateGenius {
 				}
 			}
 		}
-		//Returns false is password is invalid or user does not exist
+		//Returns false is password is invalid or user does not exist.
 		public bool DeleteUser(string username,string password) {
 			if(VerifyPassword(username,password)) {
 				if(tokenPool.ContainsKey(username)) {
@@ -87,7 +88,7 @@ namespace AuthenticateGenius {
 				return false;
 			}
 		}
-		//Returns false is password is invalid or user does not exist
+		//Returns false is password is invalid or user does not exist.
 		public bool ChangePassword(string username,string password,string newPassword) {
 			if(VerifyPassword(username,password)) {
 				if(tokenPool.ContainsKey(username)) {
@@ -115,14 +116,11 @@ namespace AuthenticateGenius {
 		}
 		//Used to sign out.
 		public void DeauthenticateToken(AccessToken accessToken) {
-			accessToken.Time=accessToken.Time+expiration;
+			accessToken.Persists=false;
 		}
 		//Used to see if permissions still exist or a token needs to be refreshed.
 		public bool TokenValid(AccessToken accessToken) {
 			return accessToken.Persists && DateTime.Now<accessToken.Time+expiration;
-		}
-		public bool UserExists(string username) {
-			return storage.Get(username)!=null;
 		}
 		private string GetHash(string password,string salt) {
 			using(var hasher = SHA256.Create()) {

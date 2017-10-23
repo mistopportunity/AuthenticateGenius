@@ -12,8 +12,10 @@ namespace AuthenticateGeniusTest {
 			string username = Console.ReadLine();
 			Console.Write("Password: ");
 			string password = Console.ReadLine();
-			if(authenticator.UserExists(username)) {
-				var response = authenticator.SignInUser(username,password);
+
+			var response = authenticator.CreateUser(username,password);
+			if(response == null) {
+				response = authenticator.SignInUser(username,password);
 				if(response!=null) {
 					Console.WriteLine($"Welcome back, {username}.");
 					AllExtensivePorpoises(authenticator,response);
@@ -21,10 +23,10 @@ namespace AuthenticateGeniusTest {
 					Console.WriteLine("Invalid password! AHHHH!");
 				}
 			} else {
-				var response = authenticator.CreateUser(username,password);
 				Console.WriteLine($"Hello, {username}.");
 				AllExtensivePorpoises(authenticator,response);
 			}
+
 			Console.ReadKey(true);
 			goto Start;
 		}
