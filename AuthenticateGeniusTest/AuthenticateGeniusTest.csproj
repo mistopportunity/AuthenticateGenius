@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\AuthenticateGenius.csproj" />
+    <ProjectReference Include="..\AuthenticateGenius\AuthenticateGenius.csproj" />
   </ItemGroup>
 
 </Project>

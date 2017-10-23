@@ -6,6 +6,7 @@ namespace AuthenticateGeniusTest {
 		static void Main() {
 			var storage = new GeniusStorage("users");
 			var authenticator = new Authenticator(storage);
+
 			Start:
 			Console.WriteLine("Yo, sign in or make an account.");
 			Console.Write("Username: ");

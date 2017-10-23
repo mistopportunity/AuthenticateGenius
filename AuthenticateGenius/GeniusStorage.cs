@@ -19,7 +19,7 @@ namespace AuthenticateGenius {
 				Directory.CreateDirectory(directory);
 			}
 		}
-		public void Delete(string key) {
+		internal void Delete(string key) {
 			dictionary.Remove(key);
 			File.Delete(Path.Combine(directory,key));
 		}
