@@ -4,137 +4,196 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 
 namespace AuthenticateGenius {
+
+
+
 	public sealed class Authenticator {
-		private const string DefaultDirectory = "users";
-		private readonly Dictionary<string,AccessToken> tokenPool = new Dictionary<string,AccessToken>();
+
+
+
+		private readonly Dictionary<string,AccessToken> tokenPool =
+			new Dictionary<string,AccessToken>();
+
 		private readonly GeniusStorage storage;
-		private readonly TimeSpan expiration;
+		private readonly InputBlocker inputBlocker;
+
+		internal readonly TimeSpan expiration;
 		private readonly Encoding encoding;
+
+
 		private const int SaltSize = 16;
 		private const int SaltLength = SaltSize*2;
 		private const int HashLength = 64;
+
 		public Authenticator() {
-			storage=new GeniusStorage(DefaultDirectory);
-			expiration=TimeSpan.MaxValue;
+
+			storage=new GeniusStorage();
+			inputBlocker=new InputBlocker();
+			expiration=TimeSpan.FromDays(1);
 			encoding=Encoding.Unicode;
+
 		}
-		public Authenticator(GeniusStorage storage) {
-			this.storage=storage;
-			expiration=TimeSpan.MaxValue;
-			encoding=Encoding.Unicode;
+
+		public Authenticator(AuthenticatorConfig config) {
+
+			storage=(config.Storage==null ?
+				config.Storage : new GeniusStorage());
+
+			inputBlocker=inputBlocker=(config.InputBlocker==null ?
+				config.InputBlocker : new InputBlocker());
+
+			expiration=expiration=(config.Expiration.HasValue ?
+				(TimeSpan)config.Expiration:TimeSpan.FromDays(1));
+
+			encoding=encoding=(config.Encoding==null ?
+				config.Encoding : Encoding.Unicode);
 		}
-		public Authenticator(GeniusStorage storage,TimeSpan expiration) {
-			this.storage=storage;
-			this.expiration=expiration;
-			encoding=Encoding.Unicode;
+		public bool UserExists(string username) {
+			return inputBlocker.CheckUsername(username)
+				== InputResponse.Valid &&
+				storage.Get(username)!=null;
 		}
-		public Authenticator(GeniusStorage storage,TimeSpan expiration,Encoding encoding) {
-			this.storage=storage;
-			this.expiration=expiration;
-			this.encoding=encoding;
+
+		private bool VerifyPassword(string username,string password) {
+			string authorizationData = storage.Get(username);
+			return string.Equals(
+				authorizationData.Substring(SaltLength,HashLength),
+				GetHash(password,authorizationData.Substring(0,SaltLength))
+			);
 		}
-		/*Returns null if password is invalid or user doesn't exist.
-		  Forcibly signs out other tokens on successfull sign in. */
-		public AccessToken SignInUser(string username,string password) {
-			if(VerifyPassword(username,password)) {
-				AccessToken accessToken = new AccessToken(username);
-				if(tokenPool.ContainsKey(username)) {
-					DeauthenticateToken(tokenPool[username]);
-					tokenPool[username] = accessToken;
-				} else {
-					tokenPool.Add(username,accessToken);
-				}
-				return accessToken;
-			} else {
-				return null;
+		public CreationResponse CreateUser(
+			string username,
+			string password,
+			out AccessToken accessToken
+		) {
+			accessToken=null;
+			switch(inputBlocker.CheckUsername(username)) {
+				case InputResponse.TooLong:
+					return CreationResponse.UsernameTooLong;
+				case InputResponse.TooShort:
+					return CreationResponse.UsernameTooShort;
+				case InputResponse.ContainsInvalidCharacters:
+					return CreationResponse.UsernameContainsInvalidCharacters;
 			}
-		}
-		//Can be used to check if a user exists through a null return.
-		public AccessToken CreateUser(string username,string password) {
-			if(storage.Get(username)==null) {
+			if(storage.Get(username)!=null) {
+				return CreationResponse.UserAlreadyExists;
+			} else {
+				switch(inputBlocker.CheckPassword(password)) {
+					case InputResponse.TooLong:
+						return CreationResponse.PasswordTooLong;
+					case InputResponse.TooShort:
+						return CreationResponse.PasswordTooShort;
+					case InputResponse.ContainsInvalidCharacters:
+						return CreationResponse.PasswordContainsInvalidCharacters;
+				}
 				string salt = GetSalt();
 				storage.Set(username,salt+GetHash(password,salt));
-				AccessToken accessToken = new AccessToken(username);
+				accessToken=new AccessToken(username,this);
 				tokenPool.Add(username,accessToken);
-				return accessToken;
-			} else {
-				return null;
+				return CreationResponse.Success;
 			}
 		}
-		private bool VerifyPassword(string username,string password) {
-			string value = storage.Get(username);
-			if(value==null) {
-				return false;
-			} else {
-				string salt = value.Substring(0,SaltLength);
-				string hash = value.Substring(SaltLength,HashLength);
-				if(hash==GetHash(password,salt)) {
-					return true;
+		public SignInResponse SignIn(
+			string username,
+			string password,
+			out AccessToken accessToken
+		) {
+			accessToken=null;
+			switch(inputBlocker.CheckUsername(username)) {
+				case InputResponse.Valid:
+					break;
+				default:
+					accessToken=null;
+					return SignInResponse.UserDoesNotExist;
+			}
+			if(storage.Get(username)!=null) {
+				if(inputBlocker.CheckPassword(password)==InputResponse.Valid
+					&&VerifyPassword(username,password)) {
+					accessToken=new AccessToken(username,this);
+					if(tokenPool.ContainsKey(username)) {
+						tokenPool[username].Deauthorize();
+						tokenPool[username]=accessToken;
+					} else {
+						tokenPool.Add(username,accessToken);
+					}	
+					return SignInResponse.Success;
 				} else {
-					return false;
+					return SignInResponse.InvalidPassword;
+				}
+			} else {
+				return SignInResponse.UserDoesNotExist;
+			}
+		}
+		public ActionResponse ChangePassword(AccessToken accessToken,string password) {
+			if(
+				inputBlocker.CheckPassword(password)==InputResponse.Valid&&
+				accessToken.Authorized
+			) {
+				if(VerifyPassword(accessToken.Username,password)) {
+					string salt = GetSalt();
+					storage.Set(accessToken.Username,salt+GetHash(password,salt));
+					return ActionResponse.Success;
+				} else {
+					return ActionResponse.Unauthorized;
+				}
+			} else {
+				return ActionResponse.Unauthorized;
+			}
+		}
+		public ActionResponse DeleteUser(AccessToken accessToken,string password) {
+			if(
+				inputBlocker.CheckPassword(password) == InputResponse.Valid&&
+				accessToken.Persists
+			) {
+				if(!accessToken.Expired) {
+					if(VerifyPassword(accessToken.Username,password)) {
+						accessToken.Deauthorize();
+						tokenPool.Remove(accessToken.Username);
+						storage.Delete(accessToken.Username);
+						return ActionResponse.Success;
+					}
 				}
 			}
+			return ActionResponse.Unauthorized;
 		}
-		//Returns false is password is invalid or user does not exist.
-		public bool DeleteUser(string username,string password) {
-			if(VerifyPassword(username,password)) {
-				if(tokenPool.ContainsKey(username)) {
-					tokenPool[username].Persists=false;
-					tokenPool.Remove(username);
-				}
-				storage.Delete(username);
-				return true;
+		public ActionResponse SignOut(AccessToken accessToken) {
+			if(accessToken.Persists) {
+				accessToken.Deauthorize();
+				tokenPool.Remove(accessToken.Username);
+				return ActionResponse.Success;
 			} else {
-				return false;
+				return ActionResponse.Unauthorized;
 			}
 		}
-		//Returns false is password is invalid or user does not exist.
-		public bool ChangePassword(string username,string password,string newPassword) {
-			if(VerifyPassword(username,password)) {
-				if(tokenPool.ContainsKey(username)) {
-					tokenPool[username].Time=DateTime.Now;
-				}
-				string salt = GetSalt();
-				storage.Set(username,salt+GetHash(newPassword,salt));
-				return true;
+		public ActionResponse RefreshToken(AccessToken accessToken,string password) {
+			if(
+				inputBlocker.CheckPassword(password)==InputResponse.Valid&&
+				accessToken.Persists&&
+				VerifyPassword(accessToken.Username,password)
+			) {
+				accessToken.Refresh();
+				return ActionResponse.Success;
 			} else {
-				return false;
+				return ActionResponse.Unauthorized;
 			}
-		}
-		//Returns false if password is invalid or user is deleted. Cannot refresh a deauthenticated token.
-		public bool RefreshToken(AccessToken accessToken,string password) {
-			if(!accessToken.Persists) {
-				return false;
-			} else if(VerifyPassword(accessToken.Username,password)) {
-				accessToken.Time=DateTime.Now;
-				return true;
-			} else {
-				//Invalidate the token because of an incorrect password.
-				DeauthenticateToken(accessToken);
-				return false;
-			}
-		}
-		//Used to sign out.
-		public void DeauthenticateToken(AccessToken accessToken) {
-			accessToken.Persists=false;
-		}
-		//Used to see if permissions still exist or a token needs to be refreshed.
-		public bool TokenValid(AccessToken accessToken) {
-			return accessToken.Persists && DateTime.Now<accessToken.Time+expiration;
 		}
 		private string GetHash(string password,string salt) {
 			using(var hasher = SHA256.Create()) {
 				byte[] bytes = hasher.ComputeHash(
 					encoding.GetBytes(password+salt)
 				);
-				return BitConverter.ToString(bytes).Replace("-","").ToLowerInvariant();
+				return BitConverter.ToString(bytes).
+					Replace("-","").
+					ToLowerInvariant();
 			}
 		}
 		private static string GetSalt() {
 			byte[] bytes = new byte[SaltSize];
 			using(var salter = RandomNumberGenerator.Create()) {
 				salter.GetBytes(bytes);
-				return BitConverter.ToString(bytes).Replace("-","").ToLowerInvariant();
+				return BitConverter.ToString(bytes).
+					Replace("-","").
+					ToLowerInvariant();
 			}
 		}
 	}

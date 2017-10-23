@@ -1,11 +1,28 @@
 ﻿using System;
 using AuthenticateGenius;
+using System.Text;
+using System.Collections.Generic;
 
 namespace AuthenticateGeniusTest {
 	class Program {
 		static void Main() {
-			var storage = new GeniusStorage("users");
-			var authenticator = new Authenticator(storage);
+
+			var tokens = new List<AccessToken>();
+
+			var authenticator = new Authenticator(new AuthenticatorConfig() {
+
+				Encoding=Encoding.Unicode,
+				Expiration=TimeSpan.FromMinutes(30),
+				Storage=new GeniusStorage("users"),
+
+				InputBlocker=new InputBlocker(new InputBlockerConfig() {
+					Password=InputWhitelist.Default,
+					Username=InputWhitelist.Default,
+					UsernameConstraint=new LengthConstraint(4,18),
+					PasswordConstraint=new LengthConstraint(8,128),
+				}),
+
+			});
 
 			Start:
 			Console.WriteLine("Yo, sign in or make an account.");
@@ -14,30 +31,46 @@ namespace AuthenticateGeniusTest {
 			Console.Write("Password: ");
 			string password = Console.ReadLine();
 
-			var response = authenticator.CreateUser(username,password);
-			if(response == null) {
-				response = authenticator.SignInUser(username,password);
-				if(response!=null) {
-					Console.WriteLine($"Welcome back, {username}.");
-					AllExtensivePorpoises(authenticator,response);
-				} else {
-					Console.WriteLine("Invalid password! AHHHH!");
+			if(authenticator.UserExists(username)) {
+
+				switch(authenticator.SignIn(
+					username,
+					password,
+					out AccessToken token
+				)) {
+					case SignInResponse.Success:
+						Console.WriteLine("Welcome back to.. a fun place.");
+						tokens.Add(token);
+						break;
+					case SignInResponse.InvalidPassword:
+						Console.WriteLine("Invalid password. You suck.");
+						break;
 				}
 			} else {
-				Console.WriteLine($"Hello, {username}.");
-				AllExtensivePorpoises(authenticator,response);
+				switch(authenticator.CreateUser(
+					username,
+					password,
+					out AccessToken token
+				)) {
+					case CreationResponse.Success:
+						Console.WriteLine("Woo-hoo! Welcome to.. a fun place.");
+						tokens.Add(token);
+						break;
+					case CreationResponse.PasswordContainsInvalidCharacters:
+					case CreationResponse.PasswordTooShort:
+					case CreationResponse.PasswordTooLong:
+						Console.WriteLine("Your password offends me. Start over.");
+						break;
+					case CreationResponse.UsernameContainsInvalidCharacters:
+					case CreationResponse.UsernameTooLong:
+					case CreationResponse.UsernameTooShort:
+						Console.WriteLine("We don't like yer username! Piss off!");
+						break;
+				}
 			}
 
 			Console.ReadKey(true);
 			goto Start;
-		}
-		private static void AllExtensivePorpoises(Authenticator authenticator,AccessToken accessToken) {
-			Console.Write("Even though you just got logged into your account, now we have to delete you for testing purposes. Sorry.\nPlease enter your password: ");
-			if(authenticator.DeleteUser(accessToken.Username,Console.ReadLine())) {
-				Console.WriteLine("Sorry to see you go... Until next time.");
-			} else {
-				Console.WriteLine("Wow, entering the wrong password on purpose to save your account? Shame, but clever.");
-			}
 		}
 	}
 }

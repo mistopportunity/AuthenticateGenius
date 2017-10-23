@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace AuthenticateGenius {
 	public sealed class GeniusStorage {
-		private const string DefaultDirectory = "genius";
+		private const string DefaultDirectory = "users";
 		private readonly Dictionary<string,string> dictionary;
 		private readonly string directory;
 		public GeniusStorage(string directory = DefaultDirectory) {

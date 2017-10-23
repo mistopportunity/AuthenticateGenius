@@ -1,32 +1,49 @@
 ﻿using System;
 
-public sealed class AccessToken {
-	internal AccessToken(string username) {
-		this.username=username;
-		time=DateTime.Now;
-	}
-	private bool persists = true;
-	private readonly string username;
-	private DateTime time;
-	public string Username {
-		get {
-			return username;
+namespace AuthenticateGenius {
+	public sealed class AccessToken {
+
+		private readonly string username;
+		private readonly Authenticator authenticator;
+
+		internal AccessToken(string username,Authenticator authenticator) {
+			this.authenticator=authenticator;
+			this.username=username;
 		}
-	}
-	internal DateTime Time {
-		get {
-			return time;
+
+		internal void Refresh() {
+			Time=DateTime.Now;
 		}
-		set {
-			time=value;
+
+		internal void Deauthorize() {
+			Persists=false;
 		}
-	}
-	public bool Persists {
-		get {
-			return persists;
+
+		public string Username {
+			get {
+				return username;
+			}
 		}
-		internal set {
-			persists=value;
+
+		private DateTime Time {
+			get; set;
+		} = DateTime.Now;
+
+		public bool Persists {
+			get; private set;
+		} = true;
+
+		public bool Expired {
+			get {
+				return DateTime.Now<=Time+authenticator.expiration;
+			}
 		}
+		public bool Authorized {
+			get {
+				return Persists&&!Expired;
+			}
+		}
+
 	}
 }
+
