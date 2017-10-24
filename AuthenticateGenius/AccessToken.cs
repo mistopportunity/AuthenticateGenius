@@ -35,7 +35,7 @@ namespace AuthenticateGenius {
 
 		public bool Expired {
 			get {
-				return DateTime.Now<=Time+authenticator.expiration;
+				return DateTime.Now>=Time+authenticator.tokenExpiration;
 			}
 		}
 		public bool Authorized {

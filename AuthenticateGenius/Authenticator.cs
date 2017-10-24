@@ -4,58 +4,37 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 
 namespace AuthenticateGenius {
-
-
-
 	public sealed class Authenticator {
-
-
-
 		private readonly Dictionary<string,AccessToken> tokenPool =
 			new Dictionary<string,AccessToken>();
-
-		private readonly GeniusStorage storage;
+		private readonly GeniusStorage userStorage;
 		private readonly InputBlocker inputBlocker;
-
-		internal readonly TimeSpan expiration;
-		private readonly Encoding encoding;
-
-
+		internal readonly TimeSpan tokenExpiration;
 		private const int SaltSize = 16;
 		private const int SaltLength = SaltSize*2;
 		private const int HashLength = 64;
-
 		public Authenticator() {
-
-			storage=new GeniusStorage();
+			userStorage=new GeniusStorage();
 			inputBlocker=new InputBlocker();
-			expiration=TimeSpan.FromDays(1);
-			encoding=Encoding.Unicode;
-
+			tokenExpiration=TimeSpan.FromDays(1);
 		}
-
 		public Authenticator(AuthenticatorConfig config) {
 
-			storage=(config.Storage==null ?
-				config.Storage : new GeniusStorage());
+			userStorage = config.UserStorage??new GeniusStorage();
 
-			inputBlocker=inputBlocker=(config.InputBlocker==null ?
-				config.InputBlocker : new InputBlocker());
+			inputBlocker=inputBlocker = config.InputBlocker??new InputBlocker();
 
-			expiration=expiration=(config.Expiration.HasValue ?
-				(TimeSpan)config.Expiration:TimeSpan.FromDays(1));
+			tokenExpiration=tokenExpiration=(config.TokenExpiration.HasValue ?
+				(TimeSpan)config.TokenExpiration:TimeSpan.FromDays(1));
 
-			encoding=encoding=(config.Encoding==null ?
-				config.Encoding : Encoding.Unicode);
 		}
 		public bool UserExists(string username) {
 			return inputBlocker.CheckUsername(username)
 				== InputResponse.Valid &&
-				storage.Get(username)!=null;
+				userStorage.Get(username)!=null;
 		}
-
 		private bool VerifyPassword(string username,string password) {
-			string authorizationData = storage.Get(username);
+			string authorizationData = userStorage.Get(username);
 			return string.Equals(
 				authorizationData.Substring(SaltLength,HashLength),
 				GetHash(password,authorizationData.Substring(0,SaltLength))
@@ -75,7 +54,7 @@ namespace AuthenticateGenius {
 				case InputResponse.ContainsInvalidCharacters:
 					return CreationResponse.UsernameContainsInvalidCharacters;
 			}
-			if(storage.Get(username)!=null) {
+			if(userStorage.Get(username)!=null) {
 				return CreationResponse.UserAlreadyExists;
 			} else {
 				switch(inputBlocker.CheckPassword(password)) {
@@ -87,7 +66,7 @@ namespace AuthenticateGenius {
 						return CreationResponse.PasswordContainsInvalidCharacters;
 				}
 				string salt = GetSalt();
-				storage.Set(username,salt+GetHash(password,salt));
+				userStorage.Set(username,salt+GetHash(password,salt));
 				accessToken=new AccessToken(username,this);
 				tokenPool.Add(username,accessToken);
 				return CreationResponse.Success;
@@ -106,7 +85,7 @@ namespace AuthenticateGenius {
 					accessToken=null;
 					return SignInResponse.UserDoesNotExist;
 			}
-			if(storage.Get(username)!=null) {
+			if(userStorage.Get(username)!=null) {
 				if(inputBlocker.CheckPassword(password)==InputResponse.Valid
 					&&VerifyPassword(username,password)) {
 					accessToken=new AccessToken(username,this);
@@ -126,12 +105,13 @@ namespace AuthenticateGenius {
 		}
 		public ActionResponse ChangePassword(AccessToken accessToken,string password) {
 			if(
-				inputBlocker.CheckPassword(password)==InputResponse.Valid&&
-				accessToken.Authorized
+				accessToken.Authorized&&
+				inputBlocker.CheckPassword(password)==InputResponse.Valid
+				
 			) {
 				if(VerifyPassword(accessToken.Username,password)) {
 					string salt = GetSalt();
-					storage.Set(accessToken.Username,salt+GetHash(password,salt));
+					userStorage.Set(accessToken.Username,salt+GetHash(password,salt));
 					return ActionResponse.Success;
 				} else {
 					return ActionResponse.Unauthorized;
@@ -141,18 +121,14 @@ namespace AuthenticateGenius {
 			}
 		}
 		public ActionResponse DeleteUser(AccessToken accessToken,string password) {
-			if(
-				inputBlocker.CheckPassword(password) == InputResponse.Valid&&
-				accessToken.Persists
+			if(accessToken.Authorized&&
+				inputBlocker.CheckPassword(password)==InputResponse.Valid&&
+				VerifyPassword(accessToken.Username,password)
 			) {
-				if(!accessToken.Expired) {
-					if(VerifyPassword(accessToken.Username,password)) {
-						accessToken.Deauthorize();
-						tokenPool.Remove(accessToken.Username);
-						storage.Delete(accessToken.Username);
-						return ActionResponse.Success;
-					}
-				}
+				accessToken.Deauthorize();
+				tokenPool.Remove(accessToken.Username);
+				userStorage.Delete(accessToken.Username);
+				return ActionResponse.Success;
 			}
 			return ActionResponse.Unauthorized;
 		}
@@ -167,8 +143,8 @@ namespace AuthenticateGenius {
 		}
 		public ActionResponse RefreshToken(AccessToken accessToken,string password) {
 			if(
-				inputBlocker.CheckPassword(password)==InputResponse.Valid&&
 				accessToken.Persists&&
+				inputBlocker.CheckPassword(password)==InputResponse.Valid&&
 				VerifyPassword(accessToken.Username,password)
 			) {
 				accessToken.Refresh();
@@ -178,18 +154,17 @@ namespace AuthenticateGenius {
 			}
 		}
 		private string GetHash(string password,string salt) {
-			using(var hasher = SHA256.Create()) {
-				byte[] bytes = hasher.ComputeHash(
-					encoding.GetBytes(password+salt)
-				);
-				return BitConverter.ToString(bytes).
+			using(SHA256 hasher = SHA256.Create()) {
+				return BitConverter.ToString(hasher.ComputeHash(
+					Encoding.Unicode.GetBytes(password+salt)
+				)).
 					Replace("-","").
 					ToLowerInvariant();
 			}
 		}
-		private static string GetSalt() {
-			byte[] bytes = new byte[SaltSize];
+		private string GetSalt() {
 			using(var salter = RandomNumberGenerator.Create()) {
+				byte[] bytes = new byte[SaltSize];
 				salter.GetBytes(bytes);
 				return BitConverter.ToString(bytes).
 					Replace("-","").

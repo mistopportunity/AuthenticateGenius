@@ -3,16 +3,13 @@ using System.Text;
 
 namespace AuthenticateGenius {
 	public struct AuthenticatorConfig {
-		public GeniusStorage Storage {
+		public GeniusStorage UserStorage {
 			internal get; set;
 		}
 		public InputBlocker InputBlocker {
 			internal get; set;
 		}
-		public TimeSpan? Expiration {
-			internal get; set;
-		}
-		public Encoding Encoding {
+		public TimeSpan? TokenExpiration {
 			internal get; set;
 		}
 	}

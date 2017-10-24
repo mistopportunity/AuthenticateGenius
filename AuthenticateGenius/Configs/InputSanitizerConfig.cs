@@ -1,9 +1,9 @@
 ﻿namespace AuthenticateGenius {
 	public struct InputBlockerConfig {
-		public InputWhitelist? Username {
+		public char[] UsernameWhitelist {
 			internal get; set;
 		}
-		public InputWhitelist? Password {
+		public char[] PasswordWhitelist {
 			internal get; set;
 		}
 		public LengthConstraint? UsernameConstraint {

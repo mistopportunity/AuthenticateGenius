@@ -6,15 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="genius\**" />
-    <Compile Remove="users\**" />
-    <EmbeddedResource Remove="genius\**" />
-    <EmbeddedResource Remove="users\**" />
-    <None Remove="genius\**" />
-    <None Remove="users\**" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\AuthenticateGenius\AuthenticateGenius.csproj" />
   </ItemGroup>
 

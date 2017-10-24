@@ -1,64 +1,86 @@
-﻿using System;
-using System.Text;
+﻿using System.Linq;
 using System.Collections.Generic;
 
 namespace AuthenticateGenius {
-	[Flags]
-	public enum InputWhitelist {
-		Default = 14,
-		None = 0,
-		Spaces = 1,
-		BasicSymbols = 2,
-		EnglishAlphabet = 4,
-		Numbers = 8,
-	}
 	public sealed class InputBlocker {
-		private readonly InputWhitelist username;
-		private readonly InputWhitelist password;
+		private readonly char[] usernameWhitelist;
+		private readonly char[] passwordWhitelist;
 		private readonly LengthConstraint usernameConstraint;
 		private readonly LengthConstraint passwordConstraint;
+		private const char DefaultStart = ' ';
+		private const char DefaultEnd = '~';
+		public char[] GetCharRange(char start,char end) {
+			IEnumerable<char> GetDefaults() {
+				for(char i = start;i<end;i++) {
+					yield return i;
+				}
+			}
+			return GetDefaults().ToArray();
+		}
 		public InputBlocker() {
-			username=InputWhitelist.Default;
-			password=InputWhitelist.Default;
+			usernameWhitelist=GetCharRange(DefaultStart,DefaultEnd);
+			passwordWhitelist=usernameWhitelist;
 			usernameConstraint=LengthConstraint.Default;
 			passwordConstraint=LengthConstraint.Default;
 		}
 		public InputBlocker(InputBlockerConfig config) {
-
-			if(config.Username.HasValue) {
-				InputWhitelist username = (InputWhitelist)config.Username;
-				if(username.HasFlag(InputWhitelist.None)) {
-					this.username=InputWhitelist.Default;
-				} else
-					this.username=username;
+			if(config.UsernameWhitelist != null) {
+				usernameWhitelist=config.UsernameWhitelist;
 			} else {
-				username=InputWhitelist.Default;
+				usernameWhitelist=GetCharRange(DefaultStart,DefaultEnd);
 			}
-			if(config.Password.HasValue) {
-				InputWhitelist password= (InputWhitelist)config.Password;
-				if(password.HasFlag(InputWhitelist.None)) {
-					this.password=InputWhitelist.Default;
-				} else
-					this.password=password;
+			if(config.PasswordWhitelist!=null) {
+				usernameWhitelist=config.PasswordWhitelist;
+			} else if(usernameWhitelist == null) {
+				passwordWhitelist=GetCharRange(DefaultStart,DefaultEnd);
 			} else {
-				password=InputWhitelist.Default;
+				passwordWhitelist=usernameWhitelist;
 			}
-
 			usernameConstraint=(config.UsernameConstraint.HasValue ?
-				(LengthConstraint)config.UsernameConstraint: LengthConstraint.Default);
+				(LengthConstraint)config.UsernameConstraint : LengthConstraint.Default);
 
 			passwordConstraint=(config.PasswordConstraint.HasValue ?
 				(LengthConstraint)config.PasswordConstraint : LengthConstraint.Default);
-
 		}
-
 		internal InputResponse CheckUsername(string username) {
-			return InputResponse.Valid;
+			return Check(
+				username,
+				usernameWhitelist,
+				usernameConstraint
+			);
 		}
-
 		internal InputResponse CheckPassword(string password) {
+			return Check(
+				password,
+				passwordWhitelist,
+				passwordConstraint
+			);
+		}
+		private static InputResponse Check(
+			string value,
+			char[] whitelist,
+			LengthConstraint constraint
+		) {
+			if(value.Length<constraint.Minimum) {
+				return InputResponse.TooShort;
+			}
+			if(value.Length>constraint.Maximum) {
+				return InputResponse.TooLong;
+			}
+			//O(n) is surely faster and cheaper than O(1) here...
+			foreach(char character in value) {
+				bool matched = false;
+				for(int i = 0;i<whitelist.Length;i++) {
+					if(character==whitelist[i]) {
+						matched=true;
+						break;
+					}
+				}
+				if(!matched) {
+					return InputResponse.ContainsInvalidCharacters;
+				}
+			}
 			return InputResponse.Valid;
 		}
-
 	}
 }
