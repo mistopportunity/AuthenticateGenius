@@ -1,9 +1,9 @@
 # AuthenticateGenius
-A lightweight user authentication system built on top of a runtime redundant database (which means manually deleted data persists until the runtime is over unless internally accessed before the runtime is over.)
+A *soon to be lightweight* user authentication system built on top of a messy, ram eating database structure that generates tens of thousands of files. No, this isn't a selling point. It's being reworked after very obvious reconsideration.
 
 **Todo/unfinished components**:
 - Implement AccessToken client linking
-- Prevent servideside username swap exploits
+- Prevent server-side username swap exploits
 - Token overtaken client callback
 
 ```c#
